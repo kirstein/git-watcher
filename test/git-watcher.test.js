@@ -71,5 +71,11 @@ describe('Git-Watcher', function() {
         watcher.poll();
       }).should.throw('No callback defined');
     });
+
+    it('should pass commands to git', function(done) {
+      watcher.poll(function(err, result) {
+        done(err);
+      });
+    });
   });
 });

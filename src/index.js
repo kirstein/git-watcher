@@ -27,7 +27,7 @@ function isValidRepository(repository) {
   return false;
 }
 
-module.exports = function(repository) {
+module.exports = function(repository, branch) {
    if (!helpers.isDefined(repository) || !helpers.isString(repository) || !repository.length) {
     throw new Error('No repository location defined');
   }
@@ -38,5 +38,5 @@ module.exports = function(repository) {
     throw new Error('Invalid repository location');
   }
 
-  return new GitWatcher(repo);
+  return new GitWatcher(repo, branch);
 };
