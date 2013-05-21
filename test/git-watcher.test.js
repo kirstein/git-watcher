@@ -1,6 +1,7 @@
 var should     = require('should'),
     path       = require('path'),
     sinon      = require('sinon'),
+    helpers    = require('../src/helpers'),
     GitWatcher = require('../src/git-watcher');
 
 describe('Git-Watcher', function() {
@@ -72,9 +73,79 @@ describe('Git-Watcher', function() {
       }).should.throw('No callback defined');
     });
 
-    it('should pass commands to git', function(done) {
-      watcher.poll(function(err, result) {
-        done(err);
+    it('should pass commands to spawn', function() {
+      var spy = sinon.spy();
+      watcher._spawn = spy;
+      watcher.poll(function() {});
+      watcher._spawn.calledOnce.should.equal(true);
+    });
+
+    it('should pass default branch as log branch when no branch is defined', function() {
+      var spy = sinon.spy();
+
+      watcher._spawn = spy;
+      watcher.poll(function() {});
+
+      spy.args[0][0].should.include(watcher.defaults.TARGET);
+    });
+
+    it('should pass specified branch as log branch', function() {
+      var spy = sinon.spy();
+
+      watcher.target = 'test/branch';
+      watcher._spawn = spy;
+      watcher.poll(function() {});
+
+      spy.args[0][0].should.include(watcher.target);
+    });
+
+    describe('with mocked spawn', function() {
+      // Mock the spawn and return the callback with an result
+      function mockSpawn(err, result) {
+        watcher._spawn = function(cmd, cb) {
+          cb(err, result);
+        };
+        sinon.spy(watcher, '_spawn');
+      }
+
+      it('should trigger callback with an result if spawn failed', function() {
+        mockSpawn('test error');
+
+        var spy = sinon.spy();
+        watcher.poll(spy);
+
+        spy.calledOnce.should.be.true;
+        spy.args[0][0].should.equal('test error');
+      });
+
+      it('should call spawn twice', function() {
+        mockSpawn(null, 'test');
+
+        var spy = sinon.spy();
+        watcher.poll(spy);
+
+        watcher._spawn.calledTwice.should.be.true;
+      });
+    });
+
+    describe('#_spawn', function() {
+      it('should exist', function() {
+        watcher._spawn.should.be.a('function');
+      });
+
+      it('should trigger an error in callback if something explodes (repository location)', function(done) {
+        watcher.repository = "/this/will/explode";
+        watcher._spawn([], function(err) {
+          should.exist(err);
+          done();
+        });
+      });
+
+      it('should trigger an error in callback if something explodes (cmd)', function(done) {
+        watcher._spawn('wat', function(err) {
+          should.exist(err);
+          done();
+        });
       });
     });
   });

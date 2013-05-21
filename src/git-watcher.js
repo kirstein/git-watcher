@@ -1,37 +1,44 @@
 var spawn   = require('child_process').spawn,
     helpers = require('./helpers');
 
-function spawnGit(cmd, callback) {
-  console.log(cmd.join(' '));
-  var child  = spawn('git', cmd),
-      result = '',
-      error  = '';
-
-  child.stdout.on('data', function (data) {
-    result += data.toString();
-  });
-
-  child.stderr.on('data', function (data) {
-    error  += data.toString();
-  });
-
-  child.on('close', function (code) {
-    if (code > 0) {
-      return callback(error);
-    }
-    callback(null, result);
-  });
-  child.stdin.end();
-}
-
-function GitWatcher(repository, branch) {
+function GitWatcher(repository, target) {
   this.repository = repository;
-  this.branch     = branch;
+  this.target     = target || this.defaults.TARGET;
   this._timeout   = null;
 }
 
+GitWatcher.prototype._spawn = function(cmd, callback) {
+  try {
+    process.chdir(this.repository);
+
+    console.log(cmd.join(' '));
+    var child  = spawn('git', cmd),
+        result = '',
+        error  = '';
+
+    child.stdout.on('data', function (data) {
+      result += data.toString();
+    });
+
+    child.stderr.on('data', function (data) {
+      error  += data.toString();
+    });
+
+    child.on('close', function (code) {
+      if (code > 0) {
+        return callback(error);
+      }
+      callback(null, result);
+    });
+    child.stdin.end();
+  } catch (err) {
+    callback("Failed to initiate GitWatcher polling: " + err.message);
+  }
+};
+
 GitWatcher.prototype.defaults = {
-  TIMEOUT : 1000
+  TIMEOUT : 1000,
+  TARGET  : 'origin/master'
 };
 
 GitWatcher.prototype.poll = function(callback) {
@@ -39,10 +46,41 @@ GitWatcher.prototype.poll = function(callback) {
     throw new Error('No callback defined');
   }
 
-  spawnGit([ 'diff-index',  '--name-only', 'HEAD', '--' ], function(err, result) {
-    console.log(result);
-    callback(err, result);
+  var self = this;
+
+  // Get the last comment hash
+  this._spawn([ 'log', '-n', 1, this.target, '--oneline'], function(err, result) {
+    if (err) {
+      return callback(err);
+    }
+
+    // The latest commit hash
+    var hash = result.split(' ')[0];
+
+    // Don't poll if the remote hash has not changed
+    if (hash === self._lastHash) {
+      return;
+    }
+
+    // Build the polling target
+    // If we have the last topmost commit hash then lets get the comments between the new topmost and last topmost
+    var target = (self._lastHash || '') + '..' + hash;
+
+    self._spawn([ 'diff',  '--name-status', target ], function(err, result) {
+      if (err) {
+        return callback(err, result);
+      }
+
+      self._lastHash = hash;
+
+      var changes = helpers.parseResults(result);
+      if (helpers.isDefined(changes)) {
+        return callback(null, changes);
+      }
+    });
   });
+
+  return this;
 };
 
 GitWatcher.prototype.watch = function(callback, ms) {
@@ -67,6 +105,8 @@ GitWatcher.prototype.watch = function(callback, ms) {
 
   // Start the timeout
   setTimer();
+
+  return this;
 };
 
 module.exports = GitWatcher;
